@@ -11,9 +11,11 @@
     - SEOUL_STYTIME_06_250M_OPEN_FORN_SHORT_20260716.csv  (단기외국인)
     - 서울_행정동_경계_2017.geojson                          (행정동 경계선)
     - 서울시_행정동_중심점_2017.csv                           (행정동 이름표 위치)
+    - 서울_자치구_경계_2017.geojson                          (구 경계선)
+    - 서울시_자치구_중심점_2017.csv                           (구 이름표 위치)
 
-행정동 경계/중심점 파일은 cubensys/Korea_District 저장소(4_서울시_행정동 폴더)의
-파일을 그대로 가져온 거예요. 고맙습니다 cubensys님!
+행정구역 경계/중심점 파일은 cubensys/Korea_District 저장소(3_서울시_자치구,
+4_서울시_행정동 폴더)의 파일을 그대로 가져온 거예요. 고맙습니다 cubensys님!
 https://github.com/cubensys/Korea_District
 """
 
@@ -33,6 +35,8 @@ FILE_LONG = "SEOUL_STYTIME_05_250M_OPEN_FORN_LONG_20260716.csv"
 FILE_SHORT = "SEOUL_STYTIME_06_250M_OPEN_FORN_SHORT_20260716.csv"
 FILE_DONG_GEOJSON = "서울_행정동_경계_2017.geojson"
 FILE_DONG_CENTER = "서울시_행정동_중심점_2017.csv"
+FILE_GU_GEOJSON = "서울_자치구_경계_2017.geojson"
+FILE_GU_CENTER = "서울시_자치구_중심점_2017.csv"
 
 # 250m 격자의 한 변 길이(미터) - 데이터 이름에 있는 그대로예요.
 CELL_SIZE_M = 250
@@ -106,12 +110,29 @@ def load_dong_centers():
     return centers
 
 
+@st.cache_data(show_spinner="구 경계선을 불러오는 중이에요... 🗺️")
+def load_gu_geojson():
+    """자치구(구) 경계 GeoJSON을 읽어와요. 이것도 좌표계가 이미 위도/경도예요."""
+    with open(FILE_GU_GEOJSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@st.cache_data(show_spinner="구 이름표 위치를 불러오는 중이에요... 🏷️")
+def load_gu_centers():
+    """구 이름표를 붙일 위치(중심점)를 읽어와요."""
+    centers = pd.read_csv(FILE_GU_CENTER, encoding="cp949")
+    centers = centers.rename(columns={"시군구명": "구이름"})
+    return centers
+
+
 # 이름 매핑(코드 -> 행정동명)은 인구 데이터를 읽기 전에 먼저 만들어둬요.
 dong_centers = load_dong_centers()
 dong_name_map = dict(zip(dong_centers["코드"], dong_centers["동이름"]))
 
 df = load_data(dong_name_map)
 dong_geojson = load_dong_geojson()
+gu_geojson = load_gu_geojson()
+gu_centers = load_gu_centers()
 
 # ------------------------------------------------------------
 # 2. 사이드바 - 사용자가 조건을 고르는 곳
@@ -131,9 +152,10 @@ nat_list = ["전체 국적"] + sorted(df["국적명"].unique().tolist())
 nat_choice = st.sidebar.selectbox("국적", nat_list)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🗺️ 행정동 경계")
-show_dong_names = st.sidebar.checkbox("행정동 이름 표시", value=True)
-st.sidebar.caption("경계선은 항상 표시되고, 이름표만 켜고 끌 수 있어요.")
+st.sidebar.subheader("🗺️ 행정경계")
+show_gu_names = st.sidebar.checkbox("구 이름 표시", value=True)
+show_dong_names = st.sidebar.checkbox("동 이름 표시", value=True)
+st.sidebar.caption("경계선(구·동)은 항상 표시되고, 이름표만 각각 켜고 끌 수 있어요.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏰ 시간대")
@@ -216,36 +238,62 @@ def 색과_높이_추가(grouped, max_value):
     return grouped
 
 
-def 지도_만들기(grouped, 현재시간_라벨, show_dong_names=True):
-    """행정동 경계(+이름표) 위에 250m 격자(GridCellLayer)를 정확한 크기로 그려요."""
+def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True, show_dong_names=True):
+    """구·행정동 경계(+이름표) 위에 250m 격자(GridCellLayer)를 정확한 크기로 그려요."""
 
-    # 맨 아래 깔리는 행정동 경계선 (채우기 없이 얇은 선만)
-    boundary_layer = pdk.Layer(
+    # 맨 아래 깔리는 행정동 경계선 (얇고 옅은 선)
+    dong_boundary_layer = pdk.Layer(
         "GeoJsonLayer",
         data=dong_geojson,
         stroked=True,
         filled=False,
-        get_line_color=[255, 255, 255, 120],
+        get_line_color=[255, 255, 255, 110],
         line_width_min_pixels=1,
         pickable=False,
     )
 
-    layers = [boundary_layer]
+    # 그 위에 겹쳐 그리는 구(자치구) 경계선 - 더 굵고 밝은 노란색으로 눈에 띄게 해요.
+    gu_boundary_layer = pdk.Layer(
+        "GeoJsonLayer",
+        data=gu_geojson,
+        stroked=True,
+        filled=False,
+        get_line_color=[255, 214, 10, 230],
+        line_width_min_pixels=2.5,
+        pickable=False,
+    )
 
-    # 행정동 이름표 (켜고 끌 수 있어요)
+    layers = [dong_boundary_layer, gu_boundary_layer]
+
+    # 동 이름표 (켜고 끌 수 있어요)
     if show_dong_names:
-        label_layer = pdk.Layer(
+        dong_label_layer = pdk.Layer(
             "TextLayer",
             data=dong_centers,
             get_position=["X", "Y"],
             get_text="동이름",
-            get_size=13,
-            get_color=[255, 255, 255, 220],
+            get_size=12,
+            get_color=[255, 255, 255, 200],
             get_alignment_baseline="'center'",
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
             pickable=False,
         )
-        layers.append(label_layer)
+        layers.append(dong_label_layer)
+
+    # 구 이름표 (켜고 끌 수 있어요) - 동 이름표보다 크고 노란색으로 구분해요.
+    if show_gu_names:
+        gu_label_layer = pdk.Layer(
+            "TextLayer",
+            data=gu_centers,
+            get_position=["X", "Y"],
+            get_text="구이름",
+            get_size=20,
+            get_color=[255, 214, 10, 255],
+            get_alignment_baseline="'center'",
+            billboard=True,
+            pickable=False,
+        )
+        layers.append(gu_label_layer)
 
     # 인구 데이터 3D 격자
     grid_layer = pdk.Layer(
@@ -320,6 +368,12 @@ with legend_col:
         "- 격자에 **마우스를 올리면** 행정동 이름과 인구수가 나와요"
     )
     st.markdown("---")
+    st.markdown("#### 🗺️ 경계선 안내")
+    st.markdown(
+        "🟡 **굵은 노란 선**: 구(자치구) 경계\n\n"
+        "⚪ 얇은 흰 선: 행정동 경계"
+    )
+    st.markdown("---")
     st.markdown("#### 🎨 색상 범례")
     st.markdown(
         "🟨 적음 → 🟧 보통 → 🟥 많음\n\n"
@@ -351,7 +405,7 @@ metric_col3.metric(
     help="3명 미만이라 값이 공개되지 않은 격자예요. 합계에는 포함되지 않았어요.",
 )
 
-deck = 지도_만들기(grouped, hour_choice, show_dong_names=show_dong_names)
+deck = 지도_만들기(grouped, hour_choice, show_gu_names=show_gu_names, show_dong_names=show_dong_names)
 map_placeholder.pydeck_chart(deck, use_container_width=True)
 caption_placeholder.caption(
     f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
