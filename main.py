@@ -279,27 +279,30 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
             lambda r: [r["X"], r["Y"], label_altitude], axis=1
         )
 
-        # 지면 -> 라벨까지 이어지는 얇은 수직선
+        # 지면 -> 라벨까지 이어지는 얇은 흰색 수직선
         gu_leader_layer = pdk.Layer(
             "LineLayer",
             data=gu_callout,
             get_source_position="지면위치",
             get_target_position="라벨위치",
-            get_color=[255, 214, 10, 200],
+            get_color=[255, 255, 255, 230],
             get_width=1.5,
             pickable=False,
         )
         layers.append(gu_leader_layer)
 
-        # 공중에 띄운 구 이름 글자 (지시선 끝에 붙어요)
+        # 공중에 띄운 흰색 구 이름 글자 (지시선 끝에 붙어요)
+        # 어떤 배경 위에서도 잘 보이도록 검은색 외곽선(outline)을 둘렀어요.
         gu_label_layer = pdk.Layer(
             "TextLayer",
             data=gu_callout,
             get_position="라벨위치",
             get_text="구이름",
-            get_size=18,
-            get_color=[255, 214, 10, 255],
+            get_size=20,
+            get_color=[255, 255, 255, 255],
             get_alignment_baseline="'bottom'",
+            outline_color=[0, 0, 0, 220],
+            outline_width=3,
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
             pickable=False,
         )
@@ -348,7 +351,9 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         layers=layers,
         initial_view_state=view_state,
         tooltip=tooltip,
-        map_style="dark",  # API 키 없이도 되는 Carto 기본 다크 스타일이에요
+        # 'dark_no_labels'를 쓰면 배경 지도에 원래 깔려 있던 도시/지역 이름들이
+        # 다 빠져서, 우리가 그린 구 이름표가 훨씬 잘 보여요.
+        map_style="dark_no_labels",
     )
     return deck
 
@@ -382,7 +387,8 @@ with legend_col:
     st.markdown(
         "🟡 얇은 노란 선: 구(자치구) 경계\n\n"
         "⚪ 얇은 흰 선: 행정동 경계\n\n"
-        "🟡📍 **구 이름표**는 막대에 가리지 않도록 지시선으로 공중에 띄워뒀어요"
+        "⚪📍 **구 이름표**(흰 글씨)는 막대에 가리지 않도록 "
+        "흰색 지시선을 따라 공중에 띄워뒀어요"
     )
     st.markdown("---")
     st.markdown("#### 🎨 색상 범례")
