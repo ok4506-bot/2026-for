@@ -110,6 +110,9 @@ view_mode = st.sidebar.radio(
 )
 
 hour_list = sorted(df["체류 시작 시간"].unique().tolist())
+# 애니메이션은 데이터에 없는 시간(1~5시)도 건너뛰지 않고 0시부터 23시까지 쭉 이어서 보여줘요.
+# (그 시간대는 데이터가 없어서 화면에 막대가 안 나올 수 있어요.)
+FULL_HOURS = list(range(24))
 
 if view_mode == "정지 화면":
     # 슬라이더로 원하는 시간 하나를 골라요 (전체 시간 합계도 가능)
@@ -131,14 +134,20 @@ else:
     hour_choice = None
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("🎛️ 시점 조절 (회전 · 기울기)")
+st.sidebar.caption(
+    "지도 라이브러리(deck.gl) 규칙상 마우스 휠은 확대/축소 전용이라, "
+    "휠만으로 회전시키는 건 지원되지 않아요. 대신 아래 슬라이더로 "
+    "정확하게 돌려볼 수 있어요!"
+)
+bearing = st.sidebar.slider("🔄 회전각(좌우)", 0, 360, 0, 1)
+pitch = st.sidebar.slider("📐 기울기(상하)", 0, 60, 45, 1)
+
+st.sidebar.markdown("---")
 st.sidebar.caption(
     "🙈 인구수가 '*'로 표시된 데이터는 3명 미만이라 개인정보 보호를 위해 "
     "감춰진 값이에요. 지도에서는 아주 옅은 회색 점으로 따로 표시하고, "
     "합계에는 포함하지 않아요."
-)
-st.sidebar.caption(
-    "🖱️ 지도 조작법 — 왼쪽 드래그: 이동 · 마우스 휠: 확대/축소 · "
-    "오른쪽(또는 Ctrl) 드래그: 3D 회전·기울이기"
 )
 
 # ------------------------------------------------------------
@@ -203,7 +212,7 @@ def 색과_높이_추가(grouped, max_value):
     return grouped
 
 
-def 지도_만들기(grouped, 현재시간_라벨):
+def 지도_만들기(grouped, 현재시간_라벨, bearing=0, pitch=45):
     """pydeck GridCellLayer로 250m 격자를 정확한 크기로 그려요."""
     layer = pdk.Layer(
         "GridCellLayer",
@@ -222,8 +231,8 @@ def 지도_만들기(grouped, 현재시간_라벨):
         latitude=37.5665,
         longitude=126.9780,
         zoom=10.3,
-        pitch=45,   # 살짝 기울여서 3D 느낌을 살려요
-        bearing=0,
+        pitch=pitch,   # 사이드바 슬라이더 값으로 기울기를 조절해요
+        bearing=bearing,  # 사이드바 슬라이더 값으로 회전각을 조절해요
     )
 
     tooltip = {
@@ -254,8 +263,27 @@ st.write(
 )
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
-map_placeholder = st.empty()
+
+# 지도(왼쪽, 넓게)와 범례(오른쪽, 좁게)를 나란히 배치해요.
+map_col, legend_col = st.columns([4, 1])
+map_placeholder = map_col.empty()
 caption_placeholder = st.empty()
+
+with legend_col:
+    st.markdown("#### 🖱️ 지도 조작법")
+    st.markdown(
+        "- **드래그**: 지도 이동\n"
+        "- **마우스 휠**: 확대 · 축소\n"
+        "- **오른쪽 버튼(또는 Ctrl) 드래그**: 3D 회전 · 기울이기\n"
+        "- 정확히 돌리고 싶으면 왼쪽 **회전각 · 기울기 슬라이더**를 써보세요"
+    )
+    st.markdown("---")
+    st.markdown("#### 🎨 색상 범례")
+    st.markdown(
+        "🟨 적음 → 🟧 보통 → 🟥 많음\n\n"
+        "인구가 많을수록 노랑→주황→빨강으로 진해지고, 막대도 높아져요.\n\n"
+        "⬜ **회색 점**: 3명 미만이라 값이 감춰진 격자(마스킹, 집계 제외)"
+    )
 
 # ------------------------------------------------------------
 # 5. 화면 그리기 - '정지 화면' 모드
@@ -282,7 +310,7 @@ if view_mode == "정지 화면":
         help="3명 미만이라 값이 공개되지 않은 격자예요. 합계에는 포함되지 않았어요.",
     )
 
-    deck = 지도_만들기(grouped, hour_choice)
+    deck = 지도_만들기(grouped, hour_choice, bearing=bearing, pitch=pitch)
     map_placeholder.pydeck_chart(deck, use_container_width=True)
     caption_placeholder.caption(
         f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
@@ -304,24 +332,25 @@ else:
         global_max = 1
 
     if not play_clicked:
-        # 아직 재생 전이면, 첫 시간대를 미리보기로 보여줘요.
-        preview = base[base["체류 시작 시간"] == hour_list[0]]
+        # 아직 재생 전이면, 0시를 미리보기로 보여줘요.
+        preview = base[base["체류 시작 시간"] == FULL_HOURS[0]]
         grouped = 색과_높이_추가(격자별_집계(preview), global_max)
 
         metric_col1.metric("선택 조건 총 인구수(명, 미리보기)", f"{grouped['인구수'].sum():,.1f}")
         metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
         metric_col3.metric("전체 시간대 중 최댓값(격자당, 명)", f"{global_max:,.1f}")
 
-        deck = 지도_만들기(grouped, f"{hour_list[0]}시 (미리보기)")
+        deck = 지도_만들기(grouped, f"{FULL_HOURS[0]}시 (미리보기)", bearing=bearing, pitch=pitch)
         map_placeholder.pydeck_chart(deck, use_container_width=True)
         caption_placeholder.caption(
-            "왼쪽의 '▶ 애니메이션 재생하기' 버튼을 누르면 시간대별 변화가 시작돼요."
+            "왼쪽의 '▶ 애니메이션 재생하기' 버튼을 누르면 0시부터 23시까지 변화가 시작돼요."
         )
     else:
-        # ▶ 버튼을 눌렀을 때: 시간 순서대로 한 프레임씩 지도를 새로 그려요.
+        # ▶ 버튼을 눌렀을 때: 0시부터 23시까지, 한 시간씩 순서대로 지도를 새로 그려요.
+        # 데이터가 없는 시간(1~5시 등)은 막대 없이 빈 지도로 지나가요.
         # (재생 중에 다른 조건을 바꾸면 스트림릿이 자동으로 이 반복을 멈추고
         #  새 조건으로 다시 시작해요.)
-        for h in hour_list:
+        for h in FULL_HOURS:
             frame = base[base["체류 시작 시간"] == h]
             grouped = 색과_높이_추가(격자별_집계(frame), global_max)
 
@@ -329,7 +358,7 @@ else:
             metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
             metric_col3.metric("전체 시간대 중 최댓값(격자당, 명)", f"{global_max:,.1f}")
 
-            deck = 지도_만들기(grouped, f"{h}시")
+            deck = 지도_만들기(grouped, f"{h}시", bearing=bearing, pitch=pitch)
             map_placeholder.pydeck_chart(deck, use_container_width=True)
             caption_placeholder.caption(
                 f"⏱️ 재생 중: {stay_type} · {nat_choice} · 지금은 **{h}시** 화면이에요."
@@ -338,6 +367,5 @@ else:
             time.sleep(speed)
 
         caption_placeholder.caption(
-            f"✅ 재생이 끝났어요 ({hour_list[0]}시 ~ {hour_list[-1]}시). "
-            "다시 보려면 재생 버튼을 한 번 더 눌러주세요."
+            f"✅ 재생이 끝났어요 (0시 ~ 23시). 다시 보려면 재생 버튼을 한 번 더 눌러주세요."
         )
