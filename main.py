@@ -290,7 +290,7 @@ def 지도_만들기(grouped, 현재시간_라벨, show_dong_names=True):
         layers=layers,
         initial_view_state=view_state,
         tooltip=tooltip,
-        map_style="mapbox://styles/mapbox/dark-v10",
+        map_style="dark",  # API 키 없이도 되는 Carto 기본 다크 스타일이에요
     )
     return deck
 
