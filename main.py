@@ -134,6 +134,12 @@ dong_geojson = load_dong_geojson()
 gu_geojson = load_gu_geojson()
 gu_centers = load_gu_centers()
 
+# deck.gl의 TextLayer는 기본적으로 영어(아스키) 글자만 그릴 수 있는 폰트셋을 써서,
+# 아무 설정도 안 하면 한글은 화면에 하나도 안 나타나요(지시선만 보이고 글자는 없던 이유).
+# 그래서 구 이름에 실제로 쓰인 한글 글자만 모아서 폰트셋으로 넘겨줄 거예요.
+_구이름_글자모음 = "".join(sorted(set("".join(gu_centers["구이름"].tolist()))))
+GU_CHARACTER_SET = "'" + _구이름_글자모음 + "'"
+
 # ------------------------------------------------------------
 # 2. 사이드바 - 사용자가 조건을 고르는 곳
 # ------------------------------------------------------------
@@ -305,6 +311,7 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
             get_alignment_baseline="'bottom'",
             outline_color=[0, 0, 0, 220],
             outline_width=3,
+            character_set=GU_CHARACTER_SET,  # 한글 글자가 실제로 그려지게 하는 핵심 옵션!
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
             pickable=False,
         )
