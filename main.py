@@ -154,8 +154,7 @@ nat_choice = st.sidebar.selectbox("국적", nat_list)
 st.sidebar.markdown("---")
 st.sidebar.subheader("🗺️ 행정경계")
 show_gu_names = st.sidebar.checkbox("구 이름 표시", value=True)
-show_dong_names = st.sidebar.checkbox("동 이름 표시", value=True)
-st.sidebar.caption("경계선(구·동)은 항상 표시되고, 이름표만 각각 켜고 끌 수 있어요.")
+st.sidebar.caption("경계선(구·동)은 항상 표시되고, 구 이름표만 켜고 끌 수 있어요.")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏰ 시간대")
@@ -238,8 +237,9 @@ def 색과_높이_추가(grouped, max_value):
     return grouped
 
 
-def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True, show_dong_names=True):
-    """구·행정동 경계(+이름표) 위에 250m 격자(GridCellLayer)를 정확한 크기로 그려요."""
+def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
+    """구·행정동 경계 위에 250m 격자(GridCellLayer)를 정확한 크기로 그리고,
+    구 이름은 3D 막대에 가리지 않도록 지시선(callout)으로 공중에 띄워요."""
 
     # 맨 아래 깔리는 행정동 경계선 (얇고 옅은 선)
     dong_boundary_layer = pdk.Layer(
@@ -252,45 +252,55 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True, show_dong
         pickable=False,
     )
 
-    # 그 위에 겹쳐 그리는 구(자치구) 경계선 - 더 굵고 밝은 노란색으로 눈에 띄게 해요.
+    # 그 위에 겹쳐 그리는 구(자치구) 경계선 - 노란색이지만 동 경계보다 살짝만 굵게 해요.
     gu_boundary_layer = pdk.Layer(
         "GeoJsonLayer",
         data=gu_geojson,
         stroked=True,
         filled=False,
         get_line_color=[255, 214, 10, 230],
-        line_width_min_pixels=2.5,
+        line_width_min_pixels=1.2,
         pickable=False,
     )
 
     layers = [dong_boundary_layer, gu_boundary_layer]
 
-    # 동 이름표 (켜고 끌 수 있어요)
-    if show_dong_names:
-        dong_label_layer = pdk.Layer(
-            "TextLayer",
-            data=dong_centers,
-            get_position=["X", "Y"],
-            get_text="동이름",
-            get_size=12,
-            get_color=[255, 255, 255, 200],
-            get_alignment_baseline="'center'",
-            billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
+    # 구 이름표: 3D 막대에 파묻히지 않도록, 막대 최고 높이보다 위에 글자를 띄우고
+    # 실제 위치까지 얇은 수직 '지시선'으로 이어줘요 (지도용 콜아웃 라벨 방식).
+    if show_gu_names:
+        최고높이 = float(grouped["높이"].max()) if len(grouped) else 0.0
+        if pd.isna(최고높이):
+            최고높이 = 0.0
+        label_altitude = 최고높이 * 1.4 + 400  # 막대보다 넉넉히 위에 뜨도록
+
+        gu_callout = gu_centers.copy()
+        gu_callout["지면위치"] = gu_callout.apply(lambda r: [r["X"], r["Y"], 0], axis=1)
+        gu_callout["라벨위치"] = gu_callout.apply(
+            lambda r: [r["X"], r["Y"], label_altitude], axis=1
+        )
+
+        # 지면 -> 라벨까지 이어지는 얇은 수직선
+        gu_leader_layer = pdk.Layer(
+            "LineLayer",
+            data=gu_callout,
+            get_source_position="지면위치",
+            get_target_position="라벨위치",
+            get_color=[255, 214, 10, 200],
+            get_width=1.5,
             pickable=False,
         )
-        layers.append(dong_label_layer)
+        layers.append(gu_leader_layer)
 
-    # 구 이름표 (켜고 끌 수 있어요) - 동 이름표보다 크고 노란색으로 구분해요.
-    if show_gu_names:
+        # 공중에 띄운 구 이름 글자 (지시선 끝에 붙어요)
         gu_label_layer = pdk.Layer(
             "TextLayer",
-            data=gu_centers,
-            get_position=["X", "Y"],
+            data=gu_callout,
+            get_position="라벨위치",
             get_text="구이름",
-            get_size=20,
+            get_size=18,
             get_color=[255, 214, 10, 255],
-            get_alignment_baseline="'center'",
-            billboard=True,
+            get_alignment_baseline="'bottom'",
+            billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
             pickable=False,
         )
         layers.append(gu_label_layer)
@@ -370,8 +380,9 @@ with legend_col:
     st.markdown("---")
     st.markdown("#### 🗺️ 경계선 안내")
     st.markdown(
-        "🟡 **굵은 노란 선**: 구(자치구) 경계\n\n"
-        "⚪ 얇은 흰 선: 행정동 경계"
+        "🟡 얇은 노란 선: 구(자치구) 경계\n\n"
+        "⚪ 얇은 흰 선: 행정동 경계\n\n"
+        "🟡📍 **구 이름표**는 막대에 가리지 않도록 지시선으로 공중에 띄워뒀어요"
     )
     st.markdown("---")
     st.markdown("#### 🎨 색상 범례")
@@ -405,7 +416,7 @@ metric_col3.metric(
     help="3명 미만이라 값이 공개되지 않은 격자예요. 합계에는 포함되지 않았어요.",
 )
 
-deck = 지도_만들기(grouped, hour_choice, show_gu_names=show_gu_names, show_dong_names=show_dong_names)
+deck = 지도_만들기(grouped, hour_choice, show_gu_names=show_gu_names)
 map_placeholder.pydeck_chart(deck, use_container_width=True)
 caption_placeholder.caption(
     f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
