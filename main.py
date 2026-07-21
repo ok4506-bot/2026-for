@@ -299,17 +299,17 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         )
         layers.append(gu_leader_layer)
 
-        # 공중에 띄운 검은색 구 이름 글자 (지시선 끝에 붙어요)
-        # 어떤 배경 위에서도 잘 보이도록 흰색 외곽선(outline)을 둘렀어요.
+        # 공중에 띄운 흰색 구 이름 글자 (지시선 끝에 붙어요)
+        # 어떤 배경 위에서도 잘 보이도록 검은색 외곽선(outline)을 둘렀어요.
         gu_label_layer = pdk.Layer(
             "TextLayer",
             data=gu_callout,
             get_position="라벨위치",
             get_text="구이름",
             get_size=20,
-            get_color=[0, 0, 0, 255],
+            get_color=[255, 255, 255, 255],
             get_alignment_baseline="'bottom'",
-            outline_color=[255, 255, 255, 230],
+            outline_color=[0, 0, 0, 230],
             outline_width=3,
             character_set=GU_CHARACTER_SET,  # 한글 글자가 실제로 그려지게 하는 핵심 옵션!
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
@@ -386,19 +386,26 @@ caption_placeholder = st.empty()
 with legend_col:
     st.markdown(
         """
-<div style="font-size:0.78rem; line-height:1.5;">
+<div style="
+    font-size:0.92rem;
+    line-height:1.6;
+    border:1px solid rgba(255,255,255,0.7);
+    border-radius:8px;
+    background-color:rgba(120,120,120,0.25);
+    padding:14px;
+">
   <b>🖱️ 지도 조작법</b><br>
   • <b>드래그</b>: 지도 이동<br>
   • <b>마우스 휠</b>: 확대 · 축소<br>
   • <b>오른쪽 버튼(또는 Ctrl) 드래그</b>: 3D 회전 · 기울이기<br>
   • 격자에 <b>마우스를 올리면</b> 행정동 이름과 인구수가 나와요
-  <hr style="margin:8px 0;">
+  <hr style="margin:10px 0; border-color:rgba(255,255,255,0.3);">
   <b>🗺️ 경계선 안내</b><br>
   🟡 얇은 노란 선: 구(자치구) 경계<br>
   ⚪ 얇은 흰 선: 행정동 경계<br>
-  ⚫📍 <b>구 이름표</b>(검은 글씨 · 흰 테두리)는 막대에 가리지 않도록
+  ⚪📍 <b>구 이름표</b>(흰 글씨 · 검은 테두리)는 막대에 가리지 않도록
   흰색 지시선을 따라 공중에 띄워뒀어요
-  <hr style="margin:8px 0;">
+  <hr style="margin:10px 0; border-color:rgba(255,255,255,0.3);">
   <b>🎨 색상 범례</b><br>
   🟨 적음 → 🟧 보통 → 🟥 많음<br>
   인구가 많을수록 노랑→주황→빨강으로 진해지고, 막대도 높아져요.<br>
