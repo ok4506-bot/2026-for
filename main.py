@@ -51,6 +51,17 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------
+# 0-1. 전체 글씨 크기 줄이기
+# ------------------------------------------------------------
+# 브라우저를 75% 배율로 봤을 때가 딱 보기 좋다고 하셔서, 100% 배율로 봐도
+# 그렇게 보이도록 페이지 전체 글씨 크기의 기준(rem)을 75%로 줄여둬요.
+# (제목, 지표 숫자, 사이드바 글씨, 범례까지 전부 이 기준을 따라가서 함께 작아져요.)
+st.markdown(
+    "<style>html { font-size: 75%; }</style>",
+    unsafe_allow_html=True,
+)
+
+# ------------------------------------------------------------
 # 1. 데이터 불러오기 + 전처리 (한 번만 계산하고 캐시에 저장해요)
 # ------------------------------------------------------------
 @st.cache_data(show_spinner="인구 데이터를 불러오는 중이에요... 조금만 기다려주세요 ☕")
@@ -254,7 +265,7 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         stroked=True,
         filled=False,
         get_line_color=[255, 255, 255, 110],
-        line_width_min_pixels=1,
+        line_width_min_pixels=0.8,
         pickable=False,
     )
 
@@ -265,7 +276,7 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         stroked=True,
         filled=False,
         get_line_color=[255, 214, 10, 230],
-        line_width_min_pixels=1.2,
+        line_width_min_pixels=0.9,
         pickable=False,
     )
 
@@ -294,7 +305,7 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
             get_source_position="지면위치",
             get_target_position="라벨위치",
             get_color=[255, 255, 255, 230],
-            get_width=1.5,
+            get_width=1.1,
             pickable=False,
         )
         layers.append(gu_leader_layer)
@@ -306,11 +317,11 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
             data=gu_callout,
             get_position="라벨위치",
             get_text="구이름",
-            get_size=20,
+            get_size=15,
             get_color=[255, 255, 255, 255],
             get_alignment_baseline="'bottom'",
             outline_color=[0, 0, 0, 230],
-            outline_width=3,
+            outline_width=2,
             character_set=GU_CHARACTER_SET,  # 한글 글자가 실제로 그려지게 하는 핵심 옵션!
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
             pickable=False,
@@ -440,7 +451,7 @@ metric_col3.metric(
 )
 
 deck = 지도_만들기(grouped, hour_choice, show_gu_names=show_gu_names)
-map_placeholder.pydeck_chart(deck, use_container_width=True, height=800)
+map_placeholder.pydeck_chart(deck, use_container_width=True, height=600)
 caption_placeholder.caption(
     f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
     "막대가 높고 붉을수록 인구가 많은 격자예요."
