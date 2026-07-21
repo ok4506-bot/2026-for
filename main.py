@@ -231,14 +231,15 @@ def 지도_만들기(grouped, 현재시간_라벨):
         "style": {"backgroundColor": "#7c2d12", "color": "white"},
     }
 
-    # controller를 켜서 마우스로 자유롭게 이동/확대/회전할 수 있게 해요.
-    # dragPan(좌우상하 이동), scrollZoom(휠로 확대·축소), dragRotate(회전·기울이기)
+    # pydeck은 기본적으로 controller가 켜져 있어서(=True) 별도 설정 없이도
+    # 왼쪽 드래그(이동), 마우스 휠(확대·축소), 오른쪽/Ctrl+드래그(회전·기울이기)가
+    # 모두 가능해요. (pdk.Deck()에는 controller라는 매개변수가 따로 없어서
+    # 여기서 넣으면 오히려 TypeError가 나니 넣지 않아요!)
     deck = pdk.Deck(
         layers=[layer],
         initial_view_state=view_state,
         tooltip=tooltip,
         map_style="mapbox://styles/mapbox/dark-v10",
-        controller={"dragPan": True, "scrollZoom": True, "dragRotate": True, "doubleClickZoom": True},
     )
     return deck
 
