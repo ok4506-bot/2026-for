@@ -299,17 +299,17 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         )
         layers.append(gu_leader_layer)
 
-        # 공중에 띄운 흰색 구 이름 글자 (지시선 끝에 붙어요)
-        # 어떤 배경 위에서도 잘 보이도록 검은색 외곽선(outline)을 둘렀어요.
+        # 공중에 띄운 검은색 구 이름 글자 (지시선 끝에 붙어요)
+        # 어떤 배경 위에서도 잘 보이도록 흰색 외곽선(outline)을 둘렀어요.
         gu_label_layer = pdk.Layer(
             "TextLayer",
             data=gu_callout,
             get_position="라벨위치",
             get_text="구이름",
             get_size=20,
-            get_color=[255, 255, 255, 255],
+            get_color=[0, 0, 0, 255],
             get_alignment_baseline="'bottom'",
-            outline_color=[0, 0, 0, 220],
+            outline_color=[255, 255, 255, 230],
             outline_width=3,
             character_set=GU_CHARACTER_SET,  # 한글 글자가 실제로 그려지게 하는 핵심 옵션!
             billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
@@ -384,27 +384,28 @@ map_placeholder = map_col.empty()
 caption_placeholder = st.empty()
 
 with legend_col:
-    st.markdown("#### 🖱️ 지도 조작법")
     st.markdown(
-        "- **드래그**: 지도 이동\n"
-        "- **마우스 휠**: 확대 · 축소\n"
-        "- **오른쪽 버튼(또는 Ctrl) 드래그**: 3D 회전 · 기울이기\n"
-        "- 격자에 **마우스를 올리면** 행정동 이름과 인구수가 나와요"
-    )
-    st.markdown("---")
-    st.markdown("#### 🗺️ 경계선 안내")
-    st.markdown(
-        "🟡 얇은 노란 선: 구(자치구) 경계\n\n"
-        "⚪ 얇은 흰 선: 행정동 경계\n\n"
-        "⚪📍 **구 이름표**(흰 글씨)는 막대에 가리지 않도록 "
-        "흰색 지시선을 따라 공중에 띄워뒀어요"
-    )
-    st.markdown("---")
-    st.markdown("#### 🎨 색상 범례")
-    st.markdown(
-        "🟨 적음 → 🟧 보통 → 🟥 많음\n\n"
-        "인구가 많을수록 노랑→주황→빨강으로 진해지고, 막대도 높아져요.\n\n"
-        "⬜ **회색 점**: 3명 미만이라 값이 감춰진 격자(마스킹, 집계 제외)"
+        """
+<div style="font-size:0.78rem; line-height:1.5;">
+  <b>🖱️ 지도 조작법</b><br>
+  • <b>드래그</b>: 지도 이동<br>
+  • <b>마우스 휠</b>: 확대 · 축소<br>
+  • <b>오른쪽 버튼(또는 Ctrl) 드래그</b>: 3D 회전 · 기울이기<br>
+  • 격자에 <b>마우스를 올리면</b> 행정동 이름과 인구수가 나와요
+  <hr style="margin:8px 0;">
+  <b>🗺️ 경계선 안내</b><br>
+  🟡 얇은 노란 선: 구(자치구) 경계<br>
+  ⚪ 얇은 흰 선: 행정동 경계<br>
+  ⚫📍 <b>구 이름표</b>(검은 글씨 · 흰 테두리)는 막대에 가리지 않도록
+  흰색 지시선을 따라 공중에 띄워뒀어요
+  <hr style="margin:8px 0;">
+  <b>🎨 색상 범례</b><br>
+  🟨 적음 → 🟧 보통 → 🟥 많음<br>
+  인구가 많을수록 노랑→주황→빨강으로 진해지고, 막대도 높아져요.<br>
+  ⬜ <b>회색 점</b>: 3명 미만이라 값이 감춰진 격자(마스킹, 집계 제외)
+</div>
+""",
+        unsafe_allow_html=True,
     )
 
 # ------------------------------------------------------------
@@ -432,7 +433,7 @@ metric_col3.metric(
 )
 
 deck = 지도_만들기(grouped, hour_choice, show_gu_names=show_gu_names)
-map_placeholder.pydeck_chart(deck, use_container_width=True)
+map_placeholder.pydeck_chart(deck, use_container_width=True, height=800)
 caption_placeholder.caption(
     f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
     "막대가 높고 붉을수록 인구가 많은 격자예요."
