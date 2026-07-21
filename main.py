@@ -153,7 +153,7 @@ nat_choice = st.sidebar.selectbox("국적", nat_list)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🗺️ 행정경계")
-show_gu_names = st.sidebar.checkbox("구 이름 표시", value=True)
+show_gu_names = st.sidebar.checkbox("구 이름 표시", value=False)
 st.sidebar.caption("경계선(구·동)은 항상 표시되고, 구 이름표만 켜고 끌 수 있어요.")
 
 st.sidebar.markdown("---")
@@ -271,7 +271,9 @@ def 지도_만들기(grouped, 현재시간_라벨, show_gu_names=True):
         최고높이 = float(grouped["높이"].max()) if len(grouped) else 0.0
         if pd.isna(최고높이):
             최고높이 = 0.0
-        label_altitude = 최고높이 * 1.4 + 400  # 막대보다 넉넉히 위에 뜨도록
+        # 막대보다는 위에 띄우되, 너무 높으면 화면(카메라 시야) 밖으로
+        # 벗어나 버려서 안 보이니 최대 1400m로 상한을 둬요.
+        label_altitude = min(max(최고높이 + 300, 500), 1400)
 
         gu_callout = gu_centers.copy()
         gu_callout["지면위치"] = gu_callout.apply(lambda r: [r["X"], r["Y"], 0], axis=1)
