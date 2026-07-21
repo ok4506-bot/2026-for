@@ -5,14 +5,19 @@
 서울시 250m 격자 단위 '체류시간대별 외국인 인구' 데이터를
 지도 위에 3D 막대(격자)로 보여주는 스트림릿 앱이에요.
 
-이 파일과 같은 폴더(또는 리포지토리 루트)에 아래 두 CSV 파일을
-꼭 함께 올려주세요. 파일 이름이 다르면 아래 FILE_LONG / FILE_SHORT
-변수만 바꿔주면 됩니다.
+이 파일과 같은 폴더(또는 리포지토리 루트)에 아래 파일들을
+꼭 함께 올려주세요. 이름이 다르면 아래 FILE_* 변수만 바꿔주면 됩니다.
     - SEOUL_STYTIME_05_250M_OPEN_FORN_LONG_20260716.csv   (장기외국인)
     - SEOUL_STYTIME_06_250M_OPEN_FORN_SHORT_20260716.csv  (단기외국인)
+    - 서울_행정동_경계_2017.geojson                          (행정동 경계선)
+    - 서울시_행정동_중심점_2017.csv                           (행정동 이름표 위치)
+
+행정동 경계/중심점 파일은 cubensys/Korea_District 저장소(4_서울시_행정동 폴더)의
+파일을 그대로 가져온 거예요. 고맙습니다 cubensys님!
+https://github.com/cubensys/Korea_District
 """
 
-import time
+import json
 
 import streamlit as st
 import pandas as pd
@@ -23,9 +28,11 @@ from pyproj import Transformer
 # ------------------------------------------------------------
 # 0. 기본 설정
 # ------------------------------------------------------------
-# CSV 파일 이름 (같은 폴더에 있어야 해요. 이름이 다르면 여기만 바꿔주세요!)
+# CSV/GeoJSON 파일 이름 (같은 폴더에 있어야 해요. 이름이 다르면 여기만 바꿔주세요!)
 FILE_LONG = "SEOUL_STYTIME_05_250M_OPEN_FORN_LONG_20260716.csv"
 FILE_SHORT = "SEOUL_STYTIME_06_250M_OPEN_FORN_SHORT_20260716.csv"
+FILE_DONG_GEOJSON = "서울_행정동_경계_2017.geojson"
+FILE_DONG_CENTER = "서울시_행정동_중심점_2017.csv"
 
 # 250m 격자의 한 변 길이(미터) - 데이터 이름에 있는 그대로예요.
 CELL_SIZE_M = 250
@@ -42,8 +49,8 @@ st.set_page_config(
 # ------------------------------------------------------------
 # 1. 데이터 불러오기 + 전처리 (한 번만 계산하고 캐시에 저장해요)
 # ------------------------------------------------------------
-@st.cache_data(show_spinner="데이터를 불러오는 중이에요... 조금만 기다려주세요 ☕")
-def load_data():
+@st.cache_data(show_spinner="인구 데이터를 불러오는 중이에요... 조금만 기다려주세요 ☕")
+def load_data(name_map: dict):
     """CSV 두 개를 읽어서 하나로 합치고, 지도에 쓸 수 있게 다듬어요."""
 
     # 이 공공데이터는 한글이 CP949(EUC-KR)로 인코딩되어 있어요.
@@ -78,10 +85,33 @@ def load_data():
     df["lon"] = lon
     df["lat"] = lat
 
+    # 행정동 코드로 행정동 이름을 붙여줘요 (지도에 마우스를 올렸을 때 보여줄 거예요).
+    df["행정동명"] = df["행정동 코드"].map(name_map).fillna("동 이름 미확인")
+
     return df
 
 
-df = load_data()
+@st.cache_data(show_spinner="행정동 경계선을 불러오는 중이에요... 🗺️")
+def load_dong_geojson():
+    """행정동 경계 GeoJSON을 읽어와요. 좌표계가 이미 위도/경도(WGS84)라 변환이 필요 없어요."""
+    with open(FILE_DONG_GEOJSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@st.cache_data(show_spinner="행정동 이름표 위치를 불러오는 중이에요... 🏷️")
+def load_dong_centers():
+    """행정동 이름표를 붙일 위치(중심점)를 읽어와요. 이 파일도 CP949 인코딩이에요."""
+    centers = pd.read_csv(FILE_DONG_CENTER, encoding="cp949")
+    centers = centers.rename(columns={"읍면동명": "동이름"})
+    return centers
+
+
+# 이름 매핑(코드 -> 행정동명)은 인구 데이터를 읽기 전에 먼저 만들어둬요.
+dong_centers = load_dong_centers()
+dong_name_map = dict(zip(dong_centers["코드"], dong_centers["동이름"]))
+
+df = load_data(dong_name_map)
+dong_geojson = load_dong_geojson()
 
 # ------------------------------------------------------------
 # 2. 사이드바 - 사용자가 조건을 고르는 곳
@@ -101,47 +131,20 @@ nat_list = ["전체 국적"] + sorted(df["국적명"].unique().tolist())
 nat_choice = st.sidebar.selectbox("국적", nat_list)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("⏰ 시간대")
-
-# 시간대를 '정지 화면'으로 볼지, '애니메이션'으로 재생할지 선택해요.
-view_mode = st.sidebar.radio(
-    "보기 방식",
-    options=["정지 화면", "시간별 변화 애니메이션"],
-)
-
-hour_list = sorted(df["체류 시작 시간"].unique().tolist())
-# 애니메이션은 데이터에 없는 시간(1~5시)도 건너뛰지 않고 0시부터 23시까지 쭉 이어서 보여줘요.
-# (그 시간대는 데이터가 없어서 화면에 막대가 안 나올 수 있어요.)
-FULL_HOURS = list(range(24))
-
-if view_mode == "정지 화면":
-    # 슬라이더로 원하는 시간 하나를 골라요 (전체 시간 합계도 가능)
-    hour_choice = st.sidebar.select_slider(
-        "체류 시작 시간",
-        options=["전체 시간"] + [f"{h}시" for h in hour_list],
-        value="전체 시간",
-    )
-    play_clicked = False
-    speed = None
-else:
-    # 애니메이션 재생 속도(프레임 사이 대기 시간)
-    speed = st.sidebar.slider("재생 속도 (프레임당 초)", 0.2, 2.0, 0.6, 0.1)
-    st.sidebar.caption(
-        f"▶ 버튼을 누르면 {hour_list[0]}시부터 {hour_list[-1]}시까지 "
-        "순서대로 변화를 보여드려요."
-    )
-    play_clicked = st.sidebar.button("▶ 애니메이션 재생하기", use_container_width=True)
-    hour_choice = None
+st.sidebar.subheader("🗺️ 행정동 경계")
+show_dong_names = st.sidebar.checkbox("행정동 이름 표시", value=True)
+st.sidebar.caption("경계선은 항상 표시되고, 이름표만 켜고 끌 수 있어요.")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🎛️ 시점 조절 (회전 · 기울기)")
-st.sidebar.caption(
-    "지도 라이브러리(deck.gl) 규칙상 마우스 휠은 확대/축소 전용이라, "
-    "휠만으로 회전시키는 건 지원되지 않아요. 대신 아래 슬라이더로 "
-    "정확하게 돌려볼 수 있어요!"
+st.sidebar.subheader("⏰ 시간대")
+
+# 슬라이더로 원하는 시간 하나를 골라요 (전체 시간 합계도 가능)
+hour_list = sorted(df["체류 시작 시간"].unique().tolist())
+hour_choice = st.sidebar.select_slider(
+    "체류 시작 시간",
+    options=["전체 시간"] + [f"{h}시" for h in hour_list],
+    value="전체 시간",
 )
-bearing = st.sidebar.slider("🔄 회전각(좌우)", 0, 360, 0, 1)
-pitch = st.sidebar.slider("📐 기울기(상하)", 0, 60, 45, 1)
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
@@ -164,12 +167,13 @@ def 유형_국적_필터(원본, stay_type, nat_choice):
 
 
 def 격자별_집계(부분데이터):
-    """위치(격자)별로 인구수를 더하고, 마스킹 여부도 함께 계산해요."""
+    """위치(격자)별로 인구수를 더하고, 마스킹 여부·행정동명도 함께 계산해요."""
     grouped = (
         부분데이터.groupby(["lat", "lon"])
         .agg(
-            인구수=("인구수_숫자", "sum"),   # '*'(마스킹)는 NaN이라 합계에서 자동 제외돼요
+            인구수=("인구수_숫자", "sum"),      # '*'(마스킹)는 NaN이라 합계에서 자동 제외돼요
             마스킹있음=("마스킹여부", "any"),
+            행정동명=("행정동명", "first"),      # 같은 격자는 항상 같은 행정동이에요
         )
         .reset_index()
     )
@@ -212,9 +216,39 @@ def 색과_높이_추가(grouped, max_value):
     return grouped
 
 
-def 지도_만들기(grouped, 현재시간_라벨, bearing=0, pitch=45):
-    """pydeck GridCellLayer로 250m 격자를 정확한 크기로 그려요."""
-    layer = pdk.Layer(
+def 지도_만들기(grouped, 현재시간_라벨, show_dong_names=True):
+    """행정동 경계(+이름표) 위에 250m 격자(GridCellLayer)를 정확한 크기로 그려요."""
+
+    # 맨 아래 깔리는 행정동 경계선 (채우기 없이 얇은 선만)
+    boundary_layer = pdk.Layer(
+        "GeoJsonLayer",
+        data=dong_geojson,
+        stroked=True,
+        filled=False,
+        get_line_color=[255, 255, 255, 120],
+        line_width_min_pixels=1,
+        pickable=False,
+    )
+
+    layers = [boundary_layer]
+
+    # 행정동 이름표 (켜고 끌 수 있어요)
+    if show_dong_names:
+        label_layer = pdk.Layer(
+            "TextLayer",
+            data=dong_centers,
+            get_position=["X", "Y"],
+            get_text="동이름",
+            get_size=13,
+            get_color=[255, 255, 255, 220],
+            get_alignment_baseline="'center'",
+            billboard=True,  # 지도를 회전/기울여도 글자는 항상 똑바로 보여요
+            pickable=False,
+        )
+        layers.append(label_layer)
+
+    # 인구 데이터 3D 격자
+    grid_layer = pdk.Layer(
         "GridCellLayer",
         data=grouped,
         get_position=["lon", "lat"],
@@ -226,26 +260,34 @@ def 지도_만들기(grouped, 현재시간_라벨, bearing=0, pitch=45):
         pickable=True,
         auto_highlight=True,
     )
+    layers.append(grid_layer)
 
+    # 지도 초기 시점: 서울시청 근처를 45도 기울여서 3D 느낌으로 시작해요.
+    # (마우스 드래그·오른쪽 버튼 드래그로 언제든 자유롭게 돌려볼 수 있어요)
     view_state = pdk.ViewState(
         latitude=37.5665,
         longitude=126.9780,
         zoom=10.3,
-        pitch=pitch,   # 사이드바 슬라이더 값으로 기울기를 조절해요
-        bearing=bearing,  # 사이드바 슬라이더 값으로 회전각을 조절해요
+        pitch=45,
+        bearing=0,
     )
 
+    # 마우스를 격자 위에 올리면(hover) 행정동 이름과 인구수를 보여줘요.
     tooltip = {
-        "html": f"<b>{현재시간_라벨}</b><br/><b>인구수:</b> {{인구수}}명",
+        "html": (
+            f"<b>{현재시간_라벨}</b><br/>"
+            "<b>행정동:</b> {행정동명}<br/>"
+            "<b>인구수:</b> {인구수}명"
+        ),
         "style": {"backgroundColor": "#7c2d12", "color": "white"},
     }
 
     # pydeck은 기본적으로 controller가 켜져 있어서(=True) 별도 설정 없이도
-    # 왼쪽 드래그(이동), 마우스 휠(확대·축소), 오른쪽/Ctrl+드래그(회전·기울이기)가
+    # 드래그(이동), 마우스 휠(확대·축소), 오른쪽/Ctrl+드래그(회전·기울이기)가
     # 모두 가능해요. (pdk.Deck()에는 controller라는 매개변수가 따로 없어서
     # 여기서 넣으면 오히려 TypeError가 나니 넣지 않아요!)
     deck = pdk.Deck(
-        layers=[layer],
+        layers=layers,
         initial_view_state=view_state,
         tooltip=tooltip,
         map_style="mapbox://styles/mapbox/dark-v10",
@@ -275,7 +317,7 @@ with legend_col:
         "- **드래그**: 지도 이동\n"
         "- **마우스 휠**: 확대 · 축소\n"
         "- **오른쪽 버튼(또는 Ctrl) 드래그**: 3D 회전 · 기울이기\n"
-        "- 정확히 돌리고 싶으면 왼쪽 **회전각 · 기울기 슬라이더**를 써보세요"
+        "- 격자에 **마우스를 올리면** 행정동 이름과 인구수가 나와요"
     )
     st.markdown("---")
     st.markdown("#### 🎨 색상 범례")
@@ -286,86 +328,32 @@ with legend_col:
     )
 
 # ------------------------------------------------------------
-# 5. 화면 그리기 - '정지 화면' 모드
+# 5. 화면 그리기 - 선택한 시간대의 정지 화면
 # ------------------------------------------------------------
-if view_mode == "정지 화면":
-    filtered = 유형_국적_필터(df, stay_type, nat_choice)
-    if hour_choice != "전체 시간":
-        선택시간 = int(hour_choice.replace("시", ""))
-        filtered = filtered[filtered["체류 시작 시간"] == 선택시간]
+filtered = 유형_국적_필터(df, stay_type, nat_choice)
+if hour_choice != "전체 시간":
+    선택시간 = int(hour_choice.replace("시", ""))
+    filtered = filtered[filtered["체류 시작 시간"] == 선택시간]
 
-    grouped = 격자별_집계(filtered)
+grouped = 격자별_집계(filtered)
 
-    max_value = grouped.loc[grouped["숫자있음"], "인구수"].max()
-    if pd.isna(max_value) or max_value == 0:
-        max_value = 1  # 나눗셈 오류 방지용 (표시할 데이터가 없을 때)
+max_value = grouped.loc[grouped["숫자있음"], "인구수"].max()
+if pd.isna(max_value) or max_value == 0:
+    max_value = 1  # 나눗셈 오류 방지용 (표시할 데이터가 없을 때)
 
-    grouped = 색과_높이_추가(grouped, max_value)
+grouped = 색과_높이_추가(grouped, max_value)
 
-    metric_col1.metric("선택 조건 총 인구수(명)", f"{grouped['인구수'].sum():,.1f}")
-    metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
-    metric_col3.metric(
-        "감춰진(마스킹) 격자 수",
-        f"{int(((~grouped['숫자있음']) & grouped['마스킹있음']).sum()):,}",
-        help="3명 미만이라 값이 공개되지 않은 격자예요. 합계에는 포함되지 않았어요.",
-    )
+metric_col1.metric("선택 조건 총 인구수(명)", f"{grouped['인구수'].sum():,.1f}")
+metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
+metric_col3.metric(
+    "감춰진(마스킹) 격자 수",
+    f"{int(((~grouped['숫자있음']) & grouped['마스킹있음']).sum()):,}",
+    help="3명 미만이라 값이 공개되지 않은 격자예요. 합계에는 포함되지 않았어요.",
+)
 
-    deck = 지도_만들기(grouped, hour_choice, bearing=bearing, pitch=pitch)
-    map_placeholder.pydeck_chart(deck, use_container_width=True)
-    caption_placeholder.caption(
-        f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
-        "막대가 높고 붉을수록 인구가 많은 격자예요."
-    )
-
-# ------------------------------------------------------------
-# 6. 화면 그리기 - '시간별 변화 애니메이션' 모드
-# ------------------------------------------------------------
-else:
-    # 시간은 아직 거르지 않은 기준 데이터 (유형 + 국적만 반영)
-    base = 유형_국적_필터(df, stay_type, nat_choice)
-
-    # 모든 시간대에서 같은 색/높이 기준을 쓰기 위해, 전체 시간대를 통틀어
-    # 가장 큰 값을 미리 한 번만 계산해둬요. (그래야 프레임마다 색이 안 바뀌어요)
-    전체_격자별 = base.groupby(["lat", "lon", "체류 시작 시간"])["인구수_숫자"].sum().reset_index()
-    global_max = 전체_격자별["인구수_숫자"].max()
-    if pd.isna(global_max) or global_max == 0:
-        global_max = 1
-
-    if not play_clicked:
-        # 아직 재생 전이면, 0시를 미리보기로 보여줘요.
-        preview = base[base["체류 시작 시간"] == FULL_HOURS[0]]
-        grouped = 색과_높이_추가(격자별_집계(preview), global_max)
-
-        metric_col1.metric("선택 조건 총 인구수(명, 미리보기)", f"{grouped['인구수'].sum():,.1f}")
-        metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
-        metric_col3.metric("전체 시간대 중 최댓값(격자당, 명)", f"{global_max:,.1f}")
-
-        deck = 지도_만들기(grouped, f"{FULL_HOURS[0]}시 (미리보기)", bearing=bearing, pitch=pitch)
-        map_placeholder.pydeck_chart(deck, use_container_width=True)
-        caption_placeholder.caption(
-            "왼쪽의 '▶ 애니메이션 재생하기' 버튼을 누르면 0시부터 23시까지 변화가 시작돼요."
-        )
-    else:
-        # ▶ 버튼을 눌렀을 때: 0시부터 23시까지, 한 시간씩 순서대로 지도를 새로 그려요.
-        # 데이터가 없는 시간(1~5시 등)은 막대 없이 빈 지도로 지나가요.
-        # (재생 중에 다른 조건을 바꾸면 스트림릿이 자동으로 이 반복을 멈추고
-        #  새 조건으로 다시 시작해요.)
-        for h in FULL_HOURS:
-            frame = base[base["체류 시작 시간"] == h]
-            grouped = 색과_높이_추가(격자별_집계(frame), global_max)
-
-            metric_col1.metric(f"{h}시 총 인구수(명)", f"{grouped['인구수'].sum():,.1f}")
-            metric_col2.metric("데이터가 있는 격자 수", f"{int(grouped['숫자있음'].sum()):,}")
-            metric_col3.metric("전체 시간대 중 최댓값(격자당, 명)", f"{global_max:,.1f}")
-
-            deck = 지도_만들기(grouped, f"{h}시", bearing=bearing, pitch=pitch)
-            map_placeholder.pydeck_chart(deck, use_container_width=True)
-            caption_placeholder.caption(
-                f"⏱️ 재생 중: {stay_type} · {nat_choice} · 지금은 **{h}시** 화면이에요."
-            )
-
-            time.sleep(speed)
-
-        caption_placeholder.caption(
-            f"✅ 재생이 끝났어요 (0시 ~ 23시). 다시 보려면 재생 버튼을 한 번 더 눌러주세요."
-        )
+deck = 지도_만들기(grouped, hour_choice, show_dong_names=show_dong_names)
+map_placeholder.pydeck_chart(deck, use_container_width=True)
+caption_placeholder.caption(
+    f"현재 보기: {stay_type} · {nat_choice} · {hour_choice} · "
+    "막대가 높고 붉을수록 인구가 많은 격자예요."
+)
